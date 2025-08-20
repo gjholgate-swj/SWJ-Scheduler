@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Live Google-Sheet Schedule</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/kognise/water.css@latest/dist/light.min.css"/>
+<style>
+  body{max-width:990px;margin:auto;padding:1rem;font-size:.9rem}
+  table{width:100%;border-collapse:collapse}
+  caption{font-weight:bold;margin:.7rem 0}
+  td,th{padding:4px 6px}
+</style>
+</head>
+<body>
+<h1>Weekly Store Schedule</h1>
+<section id="loading">Loading sheet…</section>
+
+<script>
+(async () => {
+  // ❗❗❗ EDIT THIS SINGLE URL to the CSV url copied from Google → Publish to web
+  const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR9AV1tVLX10QFddHhdTo1MV7dDn3xZ9UjF40ooD6fjTZSyv97MyL53HhIYzdHV5RTiyBEMk03Pt32N/pub?gid=828242540&single=true&output=csv"; 
+  // ------------------------------------------------
+
+  const res = await fetch(CSV_URL);
+  if(!res.ok){ document.getElementById("loading").textContent="Could not load sheet"; return; }
+
+  // helper to parse CSV into rows+headers
+  const csvToArray=str=>str.trim().split("\n").map(r=>r.split(",").map(c=>c.trim()));
+  const rows = csvToArray(await res.text());
+
+  document.getElementById("loading").outerHTML = buildTable(rows);
+})();
+
+function buildTable(rows){
+  const header=rows.shift();
+  const daysOrder=['Mon','Tue','Wed','Thu','Fri','Sat'];        // columns 2–7
+  const dayCol = header.findIndex(h=>h.toLowerCase().includes("day"));
+  const nameCol = header.findIndex(h=>h.toLowerCase().includes("salesperson"));
+  const start1Col = header.findIndex(h=>h.toLowerCase().includes("time 1"));
+
+  // group by name then by day
+  const people={};
+  rows.forEach(r=>{
+    const name=r[nameCol]||"";
+    const day=r[dayCol]||"";
+    const start=r[start1Col]||"";
+    const end = r[start1Col+1]||"";
+    const type = r[start1Col+4]||"";
+
+    if(!name || !day) return;
+    const idx=daysOrder.indexOf(day.replace(/\d/,"")); // strip day numbers
+    if(idx===-1) return;
+
+    people[name]=people[name]||[,,,,,,];
+    if(type.toLowerCase()==="off" || !start){
+      people[name][idx]="OFF";
+    }else{
+      people[name][idx]=`${start}\n– ${end}`;
+    }
+  });
+
+  // build quick table
+  let tbl="<table><caption>Live data from Google&nbsp;Sheets — refresh to see updates tiny automatic refresh (Ctrl+R)</caption><thead><tr><th>Salesperson</th>";
+  daysOrder.forEach(d=>tbl+=`<th>${d}</th>`);
+  tbl+="</tr></thead><tbody>";
+
+  Object.entries(people).forEach(([name,week])=>{
+    tbl+=`<tr><td style="white-space:nowrap">${name}</td>`;
+    week.forEach(d=>{ tbl+=`<td style="white-space:pre">${d||""}</td>`});
+    tbl+="</tr>";
+  });
+
+  return tbl+"</tbody></table>";
+}
+</script>
+</body>
+</html>
