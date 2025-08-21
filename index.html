@@ -1,77 +1,112 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8"/>
-<title>Live Google-Sheet Schedule</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/kognise/water.css@latest/dist/light.min.css"/>
-<style>
-  body{max-width:990px;margin:auto;padding:1rem;font-size:.9rem}
-  table{width:100%;border-collapse:collapse}
-  caption{font-weight:bold;margin:.7rem 0}
-  td,th{padding:4px 6px}
-</style>
+  <meta charset="utf-8"/>
+  <title>Upcoming Schedule</title>
+  <style>
+    body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:20px;background:#fafafa;color:#333}
+    h2{margin-top:40px}
+    table{border-collapse:collapse;width:100%;margin-bottom:30px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+    th,td{border:1px solid #eee;padding:8px 6px;font-size:.85rem;text-align:center}
+    th{background:#f6f8fa;font-weight:600}
+    tr:nth-child(even){background:#fcfcfc}
+    .note{color:#777;font-size:.8rem;padding:4px 0}
+    .error{color:crimson}
+  </style>
 </head>
 <body>
-<h1>Weekly Store Schedule</h1>
-<section id="loading">Loading sheet…</section>
+<h1>Upcoming Schedules</h1>
+<section id="week1"><small class="note">Loading…</small></section>
+<section id="week2"><small class="note">Loading…</small></section>
 
 <script>
+/* 1️⃣  ------ ONLY edit this line ---------------------------- */
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR9AV1tVLX10QFddHhdTo1MV7dDn3xZ9UjF40ooD6fjTZSyv97MyL53HhIYzdHV5RTiyBEMk03Pt32N/pubhtml?gid=828242540&single=true';
+/* ---------------------------------------------------------- */
+
 (async () => {
-  // ❗❗❗ EDIT THIS SINGLE URL to the CSV url copied from Google → Publish to web
-  const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR9AV1tVLX10QFddHhdTo1MV7dDn3xZ9UjF40ooD6fjTZSyv97MyL53HhIYzdHV5RTiyBEMk03Pt32N/pub?gid=828242540&single=true&output=csv"; 
-  // ------------------------------------------------
+  /* tiny CSV->array helper */
+  const csvToArray=str=>str.trim().split('\n').map(r=>r.split(',').map(c=>c.trim()));
 
-  const res = await fetch(CSV_URL);
-  if(!res.ok){ document.getElementById("loading").textContent="Could not load sheet"; return; }
+  try {
+    const res = await fetch(CSV_URL);
+    if(!res.ok) throw new Error('Sheet not reachable');
+    const rows = csvToArray(await res.text());
+    renderTables(rows);
+  } catch (err){
+    document.querySelectorAll('section').forEach(el=>el.innerHTML='');
+    document.body.insertAdjacentHTML('beforeend',
+      `<p class="error">❌ Could not load schedule:<br>${err.message}</p>`);
+  }
 
-  // helper to parse CSV into rows+headers
-  const csvToArray=str=>str.trim().split("\n").map(r=>r.split(",").map(c=>c.trim()));
-  const rows = csvToArray(await res.text());
+  function renderTables(raw){
+    if(raw.length<2){ showError('Empty sheet'); return; }
 
-  document.getElementById("loading").outerHTML = buildTable(rows);
+    const headers = raw[0];
+    const rows = raw.slice(1).filter(r=>r.length);
+
+    /* map rows to objects */
+    const schedule = rows.map(r=>({
+      salesperson : r[0]||'',
+      day          : r[1]||'',
+      start        : r[2]||'',
+      end          : r[3]||'',
+      type         : r[7]||'',
+      role         : r[8]||'',
+      duty         : r[9]||'',
+      date         : new Date(r[r.length-1])        // last column
+    })).filter(r=>!isNaN(r.date));
+
+    if(schedule.length===0){ showError('No valid date rows'); return; }
+
+    /* two week boundaries */
+    const today = new Date();
+    const nextMon = new Date(today);
+    nextMon.setDate(today.getDate() + (8 - today.getDay()) % 7);
+
+    const w1Start = new Date(nextMon);
+    const w1End   = new Date(w1Start); w1End.setDate(w1Start.getDate()+5);
+    const w2Start = new Date(nextMon); w2Start.setDate(w1Start.getDate()+7);
+    const w2End   = new Date(w2Start); w2End.setDate(w2Start.getDate()+5);
+
+    const w1=schedule.filter(r=>r.date>=w1Start && r.date<=w1End);
+    const w2=schedule.filter(r=>r.date>=w2Start && r.date<=w2End);
+
+    draw('week1',w1,`Week ${monStr(w1Start)} &ndash; ${monStr(w1End)}`);
+    draw('week2',w2,`Week ${monStr(w2Start)} &ndash; ${monStr(w2End)}`);
+  }
+
+  function monStr(d){return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})}
+
+  function draw(id,data,title){
+    const cont = document.getElementById(id);
+    if(data.length===0){ cont.innerHTML=`<h2>${title}</h2><p class="note">No shifts scheduled for this week.</p>`; return; }
+    cont.innerHTML = `<h2>${title}</h2>`+table(data);
+  }
+
+  function table(data){
+    const h=['Salesperson','Day','Start','End','Type','Role','Duty'];
+    let t='<table><thead><tr>'+h.map(x=>`<th>${x}`).join('')+'</tr></thead><tbody>';
+    data.forEach(r=>{
+      t+='<tr>'+
+         `<td>${r.salesperson}</td>`+
+         `<td>${r.day}</td>`+
+         `<td>${r.start}</td>`+
+         `<td>${r.end}</td>`+
+         `<td>${r.type}</td>`+
+         `<td>${r.role}</td>`+
+         `<td>${r.duty||''}</td>`+
+         '</tr>';
+    });
+    return t+'</tbody></table>';
+  }
+
+  function showError(msg){
+    document.querySelectorAll('section').forEach(el=>el.innerHTML='');
+    document.body.insertAdjacentHTML('beforeend',
+      `<p class="error">❌ ${msg}</p>`);
+  }
 })();
-
-function buildTable(rows){
-  const header=rows.shift();
-  const daysOrder=['Mon','Tue','Wed','Thu','Fri','Sat'];        // columns 2–7
-  const dayCol = header.findIndex(h=>h.toLowerCase().includes("day"));
-  const nameCol = header.findIndex(h=>h.toLowerCase().includes("salesperson"));
-  const start1Col = header.findIndex(h=>h.toLowerCase().includes("time 1"));
-
-  // group by name then by day
-  const people={};
-  rows.forEach(r=>{
-    const name=r[nameCol]||"";
-    const day=r[dayCol]||"";
-    const start=r[start1Col]||"";
-    const end = r[start1Col+1]||"";
-    const type = r[start1Col+4]||"";
-
-    if(!name || !day) return;
-    const idx=daysOrder.indexOf(day.replace(/\d/,"")); // strip day numbers
-    if(idx===-1) return;
-
-    people[name]=people[name]||[,,,,,,];
-    if(type.toLowerCase()==="off" || !start){
-      people[name][idx]="OFF";
-    }else{
-      people[name][idx]=`${start}\n– ${end}`;
-    }
-  });
-
-  // build quick table
-  let tbl="<table><caption>Live data from Google&nbsp;Sheets — refresh to see updates tiny automatic refresh (Ctrl+R)</caption><thead><tr><th>Salesperson</th>";
-  daysOrder.forEach(d=>tbl+=`<th>${d}</th>`);
-  tbl+="</tr></thead><tbody>";
-
-  Object.entries(people).forEach(([name,week])=>{
-    tbl+=`<tr><td style="white-space:nowrap">${name}</td>`;
-    week.forEach(d=>{ tbl+=`<td style="white-space:pre">${d||""}</td>`});
-    tbl+="</tr>";
-  });
-
-  return tbl+"</tbody></table>";
-}
 </script>
 </body>
 </html>
